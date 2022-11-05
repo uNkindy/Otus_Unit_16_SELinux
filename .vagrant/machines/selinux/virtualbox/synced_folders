@@ -1,1 +1,0 @@
-{"rsync":{"/vagrant":{"type":"rsync","guestpath":"/vagrant","hostpath":"/root/OTUS/Otus_Unit_16_SELinux","disabled":false,"__vagrantfile":true,"owner":"vagrant","group":"vagrant"}}}

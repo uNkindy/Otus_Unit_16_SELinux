@@ -134,6 +134,84 @@ Nov 05 15:14:35 selinux systemd[1]: Started The nginx HTTP and reverse proxy ser
   - Удалил модуль, nginx не запускается.
 ____
 
-#### 5. Обеспечение работоспособности приложения при включенном SELinux.
+#### 5. Обеспечение работоспособности приложения при включенном SELinux. 
+Создал виртуальные машины ns01 и client, склонированные с репозитория.
+#### 6. Попробовал внести изменения в зону, получил ошибку:
+```console
+[vagrant@client ~]$ nsupdate -k /etc/named.zonetransfer.key 
+> 192.168.50.10
+incorrect section name: 192.168.50.10
+> server 192.168.50.10
+> zone ddns.lab
+> update add www.ddns.lab. 60 A 192.168.50.15
+> send
+update failed: SERVFAIL
+> quit
+```
+#### 7. В логах  audit на ВМ client отсутствуют, залогинился на ВМ ns01:
+```console
+[root@ns01 ~]# cat /var/log/audit/audit.log | grep dns
+type=AVC msg=audit(1667662732.397:1902): avc:  denied  { create } for  pid=5095 comm="isc-worker0000" name="named.ddns.lab.view1.jnl" scontext=system_u:system_r:named_t:s0 tcontext=system_u:object_r:etc_t:s0 tclass=file permissive=0
+```
+#### 8. Убедился, что контексты безопасности не совпадают:
+```console
+ [root@ns01 ~]# ls -laZ /etc/named
+drw-rwx---. root named system_u:object_r:etc_t:s0       .
+drwxr-xr-x. root root  system_u:object_r:etc_t:s0       ..
+drw-rwx---. root named unconfined_u:object_r:etc_t:s0   dynamic
+-rw-rw----. root named system_u:object_r:etc_t:s0       named.50.168.192.rev
+-rw-rw----. root named system_u:object_r:etc_t:s0       named.dns.lab
+-rw-rw----. root named system_u:object_r:etc_t:s0       named.dns.lab.view1
+-rw-rw----. root named system_u:object_r:etc_t:s0       named.newdns.lab
+```
+#### 9. Поменял контекст безопасности на корректный:
+```console
+[root@ns01 ~]# chcon -R -t named_zone_t /etc/named
+```
+#### 10. Убедился, что контекст безопасности корректный:
+```console
+[root@ns01 ~]# ls -laZ /etc/named
+drw-rwx---. root named system_u:object_r:named_zone_t:s0 .
+drwxr-xr-x. root root  system_u:object_r:etc_t:s0       ..
+drw-rwx---. root named unconfined_u:object_r:named_zone_t:s0 dynamic
+-rw-rw----. root named system_u:object_r:named_zone_t:s0 named.50.168.192.rev
+-rw-rw----. root named system_u:object_r:named_zone_t:s0 named.dns.lab
+-rw-rw----. root named system_u:object_r:named_zone_t:s0 named.dns.lab.view1
+-rw-rw----. root named system_u:object_r:named_zone_t:s0 named.newdns.lab
+```
+#### 11. Обновление зоны прошло успешно:
+```console
+[root@client ~]# nsupdate -k /etc/named.zonetransfer.key 
+> server 192.168.50.10
+> zone ddns.lab
+> update add www.ddns.lab. 60 A 192.168.50.15
+> send
+> quit
+[root@client ~]# dig www.ddns.lab
 
+; <<>> DiG 9.11.4-P2-RedHat-9.11.4-26.P2.el7_9.10 <<>> www.ddns.lab
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 8855
+;; flags: qr aa rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 1, ADDITIONAL: 2
 
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+;; QUESTION SECTION:
+;www.ddns.lab.                  IN      A
+
+;; ANSWER SECTION:
+www.ddns.lab.           60      IN      A       192.168.50.15
+
+;; AUTHORITY SECTION:
+ddns.lab.               3600    IN      NS      ns01.dns.lab.
+
+;; ADDITIONAL SECTION:
+ns01.dns.lab.           3600    IN      A       192.168.50.10
+
+;; Query time: 1 msec
+;; SERVER: 192.168.50.10#53(192.168.50.10)
+;; WHEN: Sat Nov 05 16:12:08 UTC 2022
+;; MSG 
+```
+#### 12. Перезапустил, настройки сохранились.
